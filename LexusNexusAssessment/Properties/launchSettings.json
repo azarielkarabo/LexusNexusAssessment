@@ -1,0 +1,14 @@
+﻿{
+    "profiles": {
+        "LexusNexusAssessment": {
+            "commandName": "Project",
+            "dotnetRunMessages": true,
+            "launchBrowser": true, // Automatically open browser on start
+            "launchUrl": "", // This sets the launch URL to the root (Swagger UI)
+            "applicationUrl": "https://localhost:7077;http://localhost:7076", // Set the port URLs
+            "environmentVariables": {
+                "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+        }
+    }
+}
