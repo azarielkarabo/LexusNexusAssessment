@@ -1,6 +1,6 @@
 using LexusNexusAssessment.Models;
 using LexusNexusAssessment.Repositories.Base;
-using System.Collections.Concurrent;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace LexusNexusAssessment.Repositories
 {
@@ -9,20 +9,24 @@ namespace LexusNexusAssessment.Repositories
         private static int _nextId = 1;
         private static readonly object _idLock = new object();
 
+        public ProductRepository(IMemoryCache memoryCache) : base(memoryCache)
+        {
+        }
+
         // Override base methods to use the static dictionary
-        public override async Task<Product?> GetByIdAsync(int id)
+        public override Product? GetById(int id)
         {
             _entities.TryGetValue(id, out var product);
-            return await Task.FromResult(product);
+            return product;
         }
 
-        public override async Task<IReadOnlyList<Product>> GetAllAsync()
+        public override IReadOnlyList<Product> GetAll()
         {
             var products = _entities.Values.OrderBy(p => p.Name).ToList();
-            return await Task.FromResult(products.AsReadOnly());
+            return products.AsReadOnly();
         }
 
-        public override async Task<IReadOnlyList<Product>> GetPagedAsync(int page, int pageSize)
+        public override  IReadOnlyList<Product> GetPaged(int page, int pageSize)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
@@ -33,10 +37,10 @@ namespace LexusNexusAssessment.Repositories
                 .Take(pageSize)
                 .ToList();
 
-            return await Task.FromResult(products.AsReadOnly());
+            return products.AsReadOnly();
         }
 
-        public override async Task<Product> AddAsync(Product product)
+        public override  Product Add(Product product)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -69,7 +73,7 @@ namespace LexusNexusAssessment.Repositories
             return product;
         }
 
-        public override async Task<Product?> UpdateAsync(int id, Product product)
+        public override  Product? Update(int id, Product product)
         {
             if (product == null)
                 throw new ArgumentNullException(nameof(product));
@@ -84,22 +88,22 @@ namespace LexusNexusAssessment.Repositories
             existingProduct.Quantity = product.Quantity;
             existingProduct.CategoryId = product.CategoryId;
 
-            return await Task.FromResult(existingProduct);
+            return existingProduct;
         }
 
-        public override async Task<bool> DeleteAsync(int id)
+        public override  bool Delete(int id)
         {
             var success = _entities.TryRemove(id, out _);
-            return await Task.FromResult(success);
+            return success;
         }
 
-        public override async Task<int> CountAsync()
+        public override  int Count()
         {
-            return await Task.FromResult(_entities.Count);
+            return _entities.Count;
         }
 
         // Additional ProductRepository-specific methods
-        public async Task<Product?> GetByNameAsync(string productName)
+        public  Product? GetByName(string productName)
         {
             if (string.IsNullOrWhiteSpace(productName))
                 throw new ArgumentException("Product name cannot be null or empty", nameof(productName));
@@ -107,13 +111,13 @@ namespace LexusNexusAssessment.Repositories
             var product = _entities.Values
                 .FirstOrDefault(p => string.Equals(p.Name, productName, StringComparison.OrdinalIgnoreCase));
 
-            return await Task.FromResult(product);
+            return product;
         }
 
-        public async Task<IReadOnlyList<Product>> SearchAsync(string searchTerm, int? categoryId = null)
+        public  IReadOnlyList<Product> Search(string searchTerm, int? categoryId = null)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return await GetAllAsync();
+                return  GetAll();
 
             var query = _entities.Values.AsQueryable();
 
@@ -132,20 +136,20 @@ namespace LexusNexusAssessment.Repositories
                 .OrderByDescending(p => GetRelevanceScore(p, searchTerm))
                 .ToList();
 
-            return await Task.FromResult(results.AsReadOnly());
+            return results.AsReadOnly();
         }
 
-        public async Task<IReadOnlyList<Product>> GetByCategoryAsync(int categoryId)
+        public  IReadOnlyList<Product> GetByCategory(int categoryId)
         {
             var products = _entities.Values
                 .Where(p => p.CategoryId == categoryId)
                 .OrderBy(p => p.Name)
                 .ToList();
 
-            return await Task.FromResult(products.AsReadOnly());
+            return products.AsReadOnly();
         }
 
-        public async Task<int> GetQuantityAsync(string productName)
+        public  int GetQuantity(string productName)
         {
             if (string.IsNullOrWhiteSpace(productName))
                 throw new ArgumentException("Product name cannot be null or empty", nameof(productName));
@@ -153,7 +157,7 @@ namespace LexusNexusAssessment.Repositories
             var product = _entities.Values
                 .FirstOrDefault(p => string.Equals(p.Name, productName, StringComparison.OrdinalIgnoreCase));
 
-            return await Task.FromResult(product?.Quantity ?? 0);
+            return product?.Quantity ?? 0;
         }
 
         private static bool IsLikelyMatch(string productName, string searchTerm)

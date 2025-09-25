@@ -1,73 +1,116 @@
 ﻿using System.Collections.Concurrent;
+using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
 using System.Reflection;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace LexusNexusAssessment.Repositories.Base
 {
-    public class Repository<T> : IRepository<T> where T : class
+    public interface IEntity
     {
+        int Id { get; set; }
+        DateTime CreatedAt { get; set; }
+    }
+
+    public class Repository<T> : IRepository<T> where T : class, IEntity
+    {
+        private readonly IMemoryCache _cache;
+        private readonly string _cacheKey;
         protected readonly ConcurrentDictionary<int, T> _entities;
+
         private static int _nextId = 1;
         private static readonly object _idLock = new object();
 
-        protected Repository()
+        public Repository(IMemoryCache cache)
         {
-            _entities = new ConcurrentDictionary<int, T>();
+            _cache = cache;
+            _cacheKey = $"Repository_{typeof(T).Name}";
+
+            if (!_cache.TryGetValue(_cacheKey, out _entities!))
+            {
+                _entities = new ConcurrentDictionary<int, T>();
+
+                _cache.Set(_cacheKey, _entities, new MemoryCacheEntryOptions
+                {
+                    Priority = CacheItemPriority.High
+                });
+            }
         }
 
-        public virtual async Task<T?> GetByIdAsync(int id)
+        public virtual T? GetById(int id)
         {
             _entities.TryGetValue(id, out var entity);
-            return await Task.FromResult(entity);
+            return entity;
         }
 
-        public virtual async Task<IReadOnlyList<T>> GetAllAsync()
+        public virtual IReadOnlyList<T> GetAll()
         {
-            var entities = _entities.Values.ToList();
-            if (typeof(IComparable<T>).IsAssignableFrom(typeof(T)))
-            {
-                entities = entities.Cast<IComparable<T>>().OrderBy(x => x).Cast<T>().ToList();
-            }
-            return await Task.FromResult(entities.AsReadOnly());
+            return _entities.Values
+                .OrderBy(x => x.Id)
+                .ToList()
+                .AsReadOnly();
         }
 
-        public virtual async Task<IReadOnlyList<T>> GetPagedAsync(int page, int pageSize)
+        public virtual IReadOnlyList<T> GetPaged(int page, int pageSize)
         {
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 10;
 
-            var entities = _entities.Values.AsQueryable()
+            return _entities.Values
+                .OrderBy(x => x.Id)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .ToList();
-
-            return await Task.FromResult(entities.AsReadOnly());
+                .ToList()
+                .AsReadOnly();
         }
 
-        public virtual async Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate)
+        public virtual IReadOnlyList<T> Find(Expression<Func<T, bool>> predicate)
         {
             var compiled = predicate.Compile();
-            var entities = _entities.Values.Where(compiled).ToList();
-            return await Task.FromResult(entities.AsReadOnly());
+            return _entities.Values
+                .Where(compiled)
+                .OrderBy(x => x.Id)
+                .ToList()
+                .AsReadOnly();
         }
 
-        public virtual async Task<T> AddAsync(T entity)
+        public virtual T? FindFirst(Expression<Func<T, bool>> predicate)
         {
-            if (entity == null)
-                throw new ArgumentNullException(nameof(entity));
+            var compiled = predicate.Compile();
+            return _entities.Values.FirstOrDefault(compiled);
+        }
+
+        public virtual T Add(T entity)
+        {
+            ValidateEntity(entity);
 
             var id = GetNextId();
-            SetEntityId(entity, id);
+            entity.Id = id;
             SetTimestamps(entity, isNew: true);
 
-            _entities.TryAdd(id, entity);
-            return await Task.FromResult(entity);
+            if (!_entities.TryAdd(id, entity))
+            {
+                throw new InvalidOperationException($"Failed to add entity with ID {id}");
+            }
+
+            return entity;
         }
 
-        public virtual async Task<T?> UpdateAsync(int id, T entity)
+        public virtual IEnumerable<T> AddRange(IEnumerable<T> entities)
         {
-            if (entity == null)
-                throw new ArgumentNullException(nameof(entity));
+            var addedEntities = new List<T>();
+
+            foreach (var entity in entities)
+            {
+                addedEntities.Add(Add(entity));
+            }
+
+            return addedEntities;
+        }
+
+        public virtual T? Update(int id, T entity)
+        {
+            ValidateEntity(entity);
 
             if (!_entities.TryGetValue(id, out var existingEntity))
                 return null;
@@ -75,23 +118,65 @@ namespace LexusNexusAssessment.Repositories.Base
             UpdateEntityProperties(existingEntity, entity);
             SetTimestamps(existingEntity, isNew: false);
 
-            return await Task.FromResult(existingEntity);
+            return existingEntity;
         }
 
-        public virtual async Task<bool> DeleteAsync(int id)
+        public virtual T? Update(T entity)
         {
-            var success = _entities.TryRemove(id, out _);
-            return await Task.FromResult(success);
+            if (entity?.Id <= 0)
+                throw new ArgumentException("Entity must have a valid ID", nameof(entity));
+
+            return Update(entity.Id, entity);
         }
 
-        public virtual async Task<int> CountAsync()
+        public virtual bool Delete(int id)
         {
-            return await Task.FromResult(_entities.Count);
+            return _entities.TryRemove(id, out _);
         }
 
-        public virtual async Task<bool> ExistsAsync(int id)
+        public virtual int DeleteRange(Expression<Func<T, bool>> predicate)
         {
-            return await Task.FromResult(_entities.ContainsKey(id));
+            var compiled = predicate.Compile();
+            var idsToDelete = _entities.Values
+                .Where(compiled)
+                .Select(x => x.Id)
+                .ToList();
+
+            var deletedCount = 0;
+            foreach (var id in idsToDelete)
+            {
+                if (_entities.TryRemove(id, out _))
+                    deletedCount++;
+            }
+
+            return deletedCount;
+        }
+
+        public virtual int Count()
+        {
+            return _entities.Count;
+        }
+
+        public virtual int Count(Expression<Func<T, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            return _entities.Values.Count(compiled);
+        }
+
+        public virtual bool Exists(int id)
+        {
+            return _entities.ContainsKey(id);
+        }
+
+        public virtual bool Any(Expression<Func<T, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            return _entities.Values.Any(compiled);
+        }
+
+        public virtual void Clear()
+        {
+            _entities.Clear();
         }
 
         protected static int GetNextId()
@@ -102,30 +187,22 @@ namespace LexusNexusAssessment.Repositories.Base
             }
         }
 
-        private static void SetEntityId(T entity, int id)
-        {
-            var idProperty = typeof(T).GetProperty("Id");
-            idProperty?.SetValue(entity, id);
-        }
-
         private static void SetTimestamps(T entity, bool isNew)
         {
             var now = DateTime.UtcNow;
 
             if (isNew)
             {
-                var createdAtProperty = typeof(T).GetProperty("CreatedAt");
-                createdAtProperty?.SetValue(entity, now);
+                entity.CreatedAt = now;
             }
-
-            var updatedAtProperty = typeof(T).GetProperty("UpdatedAt");
-            updatedAtProperty?.SetValue(entity, now);
         }
 
         protected virtual void UpdateEntityProperties(T existing, T updated)
         {
             var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanWrite && p.Name != "Id" && p.Name != "CreatedAt");
+                .Where(p => p.CanWrite &&
+                           p.Name != nameof(IEntity.Id) &&
+                           p.Name != nameof(IEntity.CreatedAt));
 
             foreach (var property in properties)
             {
@@ -136,6 +213,21 @@ namespace LexusNexusAssessment.Repositories.Base
                 }
             }
         }
-    }
 
+        protected virtual void ValidateEntity(T entity)
+        {
+            if (entity == null)
+                throw new ArgumentNullException(nameof(entity));
+
+            // Use DataAnnotations validation if available
+            var validationContext = new ValidationContext(entity);
+            var validationResults = new List<ValidationResult>();
+
+            if (!Validator.TryValidateObject(entity, validationContext, validationResults, true))
+            {
+                var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
+                throw new ValidationException($"Entity validation failed: {errors}");
+            }
+        }
+    }
 }

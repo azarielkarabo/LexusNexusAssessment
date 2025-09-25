@@ -1,8 +1,9 @@
+using LexusNexusAssessment.Repositories.Base;
 using System.ComponentModel.DataAnnotations;
 
 namespace LexusNexusAssessment.Models
 {
-    public class Product: IComparable<Product>
+    public class Product : IComparable<Product>, IEntity
     {
         [Key]
         public int Id { get; set; }

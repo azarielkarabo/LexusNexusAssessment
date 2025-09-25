@@ -1,5 +1,6 @@
 ﻿using LexusNexusAssessment.Models;
 using LexusNexusAssessment.Repositories.Base;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace LexusNexusAssessment.Repositories.Categories
 {
@@ -8,28 +9,33 @@ namespace LexusNexusAssessment.Repositories.Categories
         private static int _nextId = 1;
         private static readonly object _idLock = new object();
 
-        public async Task<IReadOnlyList<Category>> GetCategoryTreeAsync()
+        public CategoryRepository(IMemoryCache memoryCache) : base(memoryCache)
+        {
+
+        }
+
+        public IReadOnlyList<Category> GetCategoryTree()
         {
             var allCategories = _entities.Values.ToList();
             var rootCategories = allCategories.Where(c => !c.ParentCategoryId.HasValue).ToList();
 
             foreach (var category in allCategories)
             {
-                category.SubCategories = allCategories
+                category.ChildCategories = allCategories
                     .Where(c => c.ParentCategoryId == category.Id)
                     .OrderBy(c => c.Name)
                     .ToList();
             }
 
-            return await Task.FromResult(rootCategories.OrderBy(c => c.Name).ToList().AsReadOnly());
+            return rootCategories.OrderBy(c => c.Name).ToList().AsReadOnly();
         }
 
-        public override Task<Category> AddAsync(Category entity)
+        public override Category Add(Category entity)
         {
             entity.Id = GetNextId();
-            return base.AddAsync(entity);
+            return base.Add(entity);
         }
-   
+
         private static int GetNextId()
         {
             lock (_idLock)

@@ -6,6 +6,6 @@ namespace LexusNexusAssessment.Repositories.Categories
 {
     public interface ICategoryRepository: IRepository<Category>
     {
-        Task<IReadOnlyList<Category>> GetCategoryTreeAsync();
+        IReadOnlyList<Category> GetCategoryTree();
     }
 }

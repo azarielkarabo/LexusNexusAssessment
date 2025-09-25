@@ -17,29 +17,30 @@ namespace LexusNexusAssessment.Controllers
         }
 
         [HttpGet("")]
-        public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetAllCategoriesTree()
+        public ActionResult<IReadOnlyList<CategoryDto>> GetAllCategoriesTree()
         {
-            var categoryTree = await _categoryRepository.GetAllAsync();
+            var categoryTree = _categoryRepository.GetAll();
             return Ok(categoryTree);
         }
 
         [HttpGet("tree")]
-        public async Task<ActionResult<IReadOnlyList<CategoryDto>>> GetCategoriesTree()
+        public ActionResult<IReadOnlyList<CategoryDto>> GetCategoriesTree()
         {
-            var categoryTree = await _categoryRepository.GetCategoryTreeAsync();
+            var categoryTree = _categoryRepository.GetCategoryTree();
             return Ok(categoryTree);
         }
 
         [HttpPost]
-        public async Task<ActionResult<CategoryDto>> CreateCategory(CreateCategoryDto createDto)
+        public ActionResult<CategoryDto> CreateCategory(CreateCategoryDto createDto)
         {
             var validation = ValidateCreateCategory(createDto);
             if (!validation.IsValid)
                 return BadRequest(validation.ErrorMessage);
 
-            var created = await _categoryRepository.AddAsync(new Category
+            var created = _categoryRepository.Add(new Category
             {
                 Name = createDto.Name,
+                Description = createDto.Description,
                 ParentCategoryId = createDto.ParentCategoryId
             });
             return Ok(created);

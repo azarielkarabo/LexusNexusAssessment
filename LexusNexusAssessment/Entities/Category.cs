@@ -1,8 +1,9 @@
+using LexusNexusAssessment.Repositories.Base;
 using System.ComponentModel.DataAnnotations;
 
 namespace LexusNexusAssessment.Models
 {
-    public class Category : IComparable<Category>
+    public class Category : IComparable<Category>, IEntity
     {
         [Key]
         public int Id { get; set; }
@@ -21,7 +22,7 @@ namespace LexusNexusAssessment.Models
 
         // Navigation properties
         public virtual Category? ParentCategory { get; set; }
-        public virtual ICollection<Category> SubCategories { get; set; } = new List<Category>();
+        public virtual ICollection<Category> ChildCategories { get; set; } = new List<Category>();
         public virtual ICollection<Product> Products { get; set; } = new List<Product>();
 
         public Category()
